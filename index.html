@@ -3,9 +3,160 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document</title>
+    <title>Passkey Login Demo</title>
   </head>
   <body>
-    <h1>hello world</h1>
+    <h1>Passkey Authentication</h1>
+
+    <div>
+      <button id="registerBtn">Register Passkey</button>
+      <button id="loginBtn">Login with Passkey</button>
+    </div>
+
+    <div id="status"></div>
+
+    <script>
+      // Check if WebAuthn is supported
+      if (!window.PublicKeyCredential) {
+        document.getElementById("status").innerHTML =
+          "WebAuthn is not supported in this browser.";
+      }
+
+      // Helper function to convert ArrayBuffer to Base64
+      function arrayBufferToBase64(buffer) {
+        const bytes = new Uint8Array(buffer);
+        let binary = "";
+        bytes.forEach((byte) => (binary += String.fromCharCode(byte)));
+        return window.btoa(binary);
+      }
+
+      // Helper function to convert Base64 to ArrayBuffer
+      function base64ToArrayBuffer(base64) {
+        const binary = window.atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes.buffer;
+      }
+
+      // Register a new passkey
+      async function registerPasskey() {
+        try {
+          const status = document.getElementById("status");
+          status.innerHTML = "Creating passkey...";
+
+          const credential = await navigator.credentials.create({
+            publicKey: {
+              challenge: crypto.getRandomValues(new Uint8Array(32)),
+              rp: {
+                name: "Passkey Demo",
+                id: window.location.hostname,
+              },
+              user: {
+                id: crypto.getRandomValues(new Uint8Array(16)),
+                name: "demo@example.com",
+                displayName: "Demo User",
+              },
+              pubKeyCredParams: [
+                {
+                  type: "public-key",
+                  alg: -7, // ES256
+                },
+                {
+                  type: "public-key",
+                  alg: -257, // RS256
+                },
+              ],
+              authenticatorSelection: {
+                authenticatorAttachment: "platform",
+                userVerification: "required",
+                residentKey: "preferred",
+              },
+              timeout: 60000,
+              attestation: "direct",
+            },
+          });
+
+          // Store credential ID for later use
+          const credentialId = arrayBufferToBase64(credential.rawId);
+          localStorage.setItem("passkeyCredentialId", credentialId);
+
+          status.innerHTML = "Passkey registered successfully!";
+          console.log("Credential registered:", credential);
+        } catch (error) {
+          console.error("Registration failed:", error);
+          document.getElementById(
+            "status"
+          ).innerHTML = `Registration failed: ${error.message}`;
+        }
+      }
+
+      // Login with passkey
+      async function loginWithPasskey() {
+        try {
+          const status = document.getElementById("status");
+          status.innerHTML = "Authenticating with passkey...";
+
+          // Get stored credential ID (optional - can work without it for discoverable credentials)
+          const storedCredentialId = localStorage.getItem(
+            "passkeyCredentialId"
+          );
+          let allowCredentials = [];
+
+          if (storedCredentialId) {
+            allowCredentials = [
+              {
+                type: "public-key",
+                id: base64ToArrayBuffer(storedCredentialId),
+                transports: ["internal", "hybrid"],
+              },
+            ];
+          }
+
+          const assertion = await navigator.credentials.get({
+            publicKey: {
+              challenge: crypto.getRandomValues(new Uint8Array(32)),
+              rpId: window.location.hostname,
+              allowCredentials: allowCredentials,
+              userVerification: "required",
+              timeout: 60000,
+            },
+          });
+
+          status.innerHTML = "Login successful!";
+          console.log("Authentication successful:", assertion);
+
+          // Here you would typically send the assertion to your server for verification
+          // Example server call:
+          /*
+          const response = await fetch('/verify-assertion', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              credentialId: arrayBufferToBase64(assertion.rawId),
+              clientDataJSON: arrayBufferToBase64(assertion.response.clientDataJSON),
+              authenticatorData: arrayBufferToBase64(assertion.response.authenticatorData),
+              signature: arrayBufferToBase64(assertion.response.signature),
+              userHandle: assertion.response.userHandle ? arrayBufferToBase64(assertion.response.userHandle) : null
+            })
+          });
+          */
+        } catch (error) {
+          console.error("Authentication failed:", error);
+          document.getElementById(
+            "status"
+          ).innerHTML = `Authentication failed: ${error.message}`;
+        }
+      }
+
+      // Event listeners
+      document
+        .getElementById("registerBtn")
+        .addEventListener("click", registerPasskey);
+      document
+        .getElementById("loginBtn")
+        .addEventListener("click", loginWithPasskey);
+    </script>
   </body>
 </html>
